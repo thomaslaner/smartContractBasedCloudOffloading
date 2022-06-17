@@ -1,0 +1,665 @@
+In the following, the test cases used to test the contracts are listed with inputs and outputs.
+
+The inputs include the conditions in the contract pre-execution and the EOW's input to the transaction. The outputs (= expected output) includes errors, events and the conditions in the contracts post-execution.
+
+The tests were performed using the following constants set to the following values:
+* PERCENTAGE_RESOURCES_TO_PAYMENT = 300;                                
+* PERCENTAGE_RESOURCES_TO_STAKING = 600;
+* PERCENTAGE_STAKING_PUNISHMENT = 50;  
+            
+User-Functions
+
+    u_assignmentRequest 
+        internal functions: i_assignmentCheckStaking, i_assignmentCheckResources, i_assignmentReturnStaking
+        nodeContract functions: c_resourceRequest (internal functions: i_scheduleLookForAvailableEntry, i_scheduleDeleteEntry, i_resourceManagement, i_stakingManagement)
+
+        1. EOW calls with parameter resources = 0
+            * Inputs:
+                * Msg.value = 3
+                * resources = 0
+                * User registered/unregistered
+            * Expected Output:
+                * Revert with Custom error: invalidInput()
+        2. Unregistered User calls with msg.value = 0
+            * Inputs: 
+                * Msg.value = 0
+                * resources = 3
+                * User unregistered
+            * Expected Output:
+                * Revert with Custom error: insufficientFundsSent(0,1)
+        3. Unregistered User calls with not enough msg.value to cover staking of requested resources
+            * Inputs:
+                * Msg.value = 4
+                * resources = 4
+                * user unregistered
+            * Expected Output:
+                * Events: 
+                    1. participantEvent(msg.sender, “successfully registered”)
+                    2. stakingEvent(msg.sender, “4 added to freeStaking”)
+                    3. participantEvent(msg.sender, “insufficient amount of staking-ETH provided”)
+                * Outcome:
+                    * User registered(freeStaking = 4, lockedStaking = 0, activeAssignments = [])
+        4. Unregistered User calls with enough msg.value to cover staking of requested resources but no free Resources available
+            * Inputs:
+                * Msg.value = 6
+                * resources = 1
+                * user unregistered
+            * Expected Output:
+                * Events:
+                    1. participantEvent(msg.sender, “successfully registered”)
+                    2. stakingEvent(msg.sender, “6 added to freeStaking”)
+                    3. participantEvent(msg.sender, “sufficient amount of staking-ETH provided”)
+                    4. stakingEvent(msg.sender, “6 added to lockedStaking, 6 deducted from freeStaking”)
+                    5. participantEvent(msg.sender, “demanded amount of resources currently not available”)
+                    6. stakingEvent(msg.sender, “6 added to freeStaking, 6 deducted from lockedStaking”)
+                * Outcome:
+                    * User registered(freeStaking = 6, lockedStaking = 0, activeAssignments = [])
+        5. Registered User doesn’t send msg.value and requests resources that he has already enough freeStaking for with the contract already but resources can’t be found
+            * Inputs:
+                * Msg.value = 0
+                * resources = 1
+                * user registered (freeStaking = 6, lockedStaking = 0, assignments = [])
+            * Expected Output:
+                * Events:
+                    1. participantEvent(msg.sender, “sufficient amount of staking-ETH provided”)
+                    2. stakingEvent(msg.sender, “6 added to lockedStaking, 6 deducted from freeStaking”)
+                    3. participantEvent(msg.sender, “demanded amount of resources currently not available”)
+                    4. stakingEvent(msg.sender, “6 added to freeStaking, 6 deducted from lockedStaking”)
+                * Outcome:
+                    * User registered(freeStaking = 6, lockedStaking = 0, activeAssignments = [])
+        6. registered User sends msg.value and requests resources that he doesn’t have enough staking for
+            * Inputs:
+                * Msg.value = 3
+                * resources = 10
+                * user registered (freeStaking = 6, lockedStaking = 0, assignments = [])
+            * Expected Output:
+                * Events:
+                    1. stakingEvent(msg.sender, “3 added to freeStaking”)
+                    2. participantEvent(msg.sender, “insufficient amount of staking-ETH provided”)
+                * Outcome:
+                    * User registered(freeStaking = 9, lockedStaking = 0, activeAssignments = [])
+        7. User requests assignment with enough staking provided and receives requested resources
+            * Inputs:
+                * UserContract
+                    * Msg.value = 20
+                    * resources = 3
+                    * user unregistered
+                * NodeContract
+                    * ChosenNode(freeStaking = 2700, boundStaking = 300, lockedStaking = 0, activeAssignments = [], freeResources = 50, lockedResources = 0)
+            * Expected Output:
+                * Events:
+                    * UserContract:
+                        1. participantEvent(msg.sender, “successfully registered”)
+                        2. stakingEvent(msg.sender, “20 added to freeStaking”)
+                        3. participantEvent(msg.sender, “sufficient amount of staking-ETH provided”)
+                        4. stakingEvent(msg.sender, “18 added to lockedStaking, 18 deducted from freeStaking”)
+                        5. participantEvent(msg.sender, “demanded amount of resources available”)
+                        6. assignmentEvent(msg.sender, addressOfCreatedAssignment, “assignment created”)
+                    * NodeContract:
+                        1. stakingEvent(chosenNodeAddress, “12 deducted from boundStaking, 12 added to lockedStaking”)
+                        2. resourceEvent(chosenNodeAddress, “3 added to lockedResources, 3 deducted from freeResources)
+                        3. AssignmentEvent(chosenNodeAddress, addressOfCreatedAssignment, “assignment created”)
+                * Outcome:
+                    * UserContract:
+                        * User registered(freeStaking = 2, lockedStaking = 18, activeAssignments = [addressOfCreatedAssignment])
+                    * NodeContract:
+                        * ChosenNode(freeStaking = 2700, boundStaking = 288, lockedStaking = 18, activeAssignments = [addressOfCreatedAssignment], freeResources = 47, lockedResources = 3)
+
+    u_info
+        Internal functions: /
+
+        1. unregistered user calls function
+            * Inputs:
+                * Msg.value doesn’t matter since it’s a view function
+                * user unregistered
+            * Expected Output:
+                * Revert with message: “This function is restricted to registered Users”
+        2. registered user without active assignment calls function
+            * Inputs:
+                * User registered(freeStaking = 6, lockedStaking = 0, activeAssignments = [])
+            * Expected Output:
+                * freeStaking = 6
+                * lockedStaking = 18
+                * activeAssignments = []
+        3. Registered user with active assignments calls function
+            * Inputs:
+                * User registered(freeStaking = 2, lockedStaking = 18, activeAssignments = [0XB3E145B86B560AAD117746623DB553EA6E819296])
+            * Expected Output:
+                * Returns: 
+                    * freeStaking = 2
+                    * lockedStaking = 18
+                    * activeAssignments = [0XB3E145B86B560AAD117746623DB553EA6E819296]
+
+        u_addStaking
+            Internal Functions: /
+
+            1. unregistered user calls function
+                * Inputs:
+                    * Msg.value = 3
+                    * user unregistered
+                * Expected Output:
+                    * Revert with message: “This function is restricted to registered Users”
+            2. registered user calls function with msg.value = 0
+                * Inputs:
+                    * Msg.value = 0
+                    * user registered (freeStaking = 300, lockedStaking = 0, activeAssignments = [])
+                * Expected Output:
+                    * Revert with Custom error: insufficientFundsSent(0,1)
+                * Outcome
+                    * User registered, 300 Wei in freeStaking, 0 Wei in lockedStaking, no active assignments
+            3. registered user calls function with msg.value > 0
+                * Inputs:
+                    * Msg.value = 30
+                    * user registered (freeStaking = 300, lockedStaking = 0, activeAssignments = [])
+                * Expected Output:
+                    * Events:
+                        1. stakingEvent(msg.sender, “30 added to freeStaking”)
+                    * Outcome:
+                        * User registered(freeStaking = 330, lockedStaking = 0, activeAssignments= [])
+
+    u_reduceStaking
+        Internal Functions: /
+
+        1. unregistered user calls function
+            * Inputs:
+                * Amount = 3
+                * user unregistered
+            * Expected Output:
+                * Revert with message: “This function is restricted to registered Users”
+        2. registered user calls function with amount = 0
+            * Inputs:
+                * amount = 0
+                * user registered (freeStaking = 300, lockedStaking = 0, activeAssignments = [])
+            * Expected Output:
+                * Revert with Custom error: invalidInput()
+                * Outcome
+                    * user registered (freeStaking = 300, lockedStaking = 0, activeAssignments = [])
+        3. registered user calls function with amount > freeStaking
+            * Inputs:
+                * Amount = 600
+                * user registered (freeStaking = 300, lockedStaking = 0, assignments = [])
+            * Expected Output:
+                * Revert with Custom error: insufficientFreeStaking(300, 600) 
+                * Outcome:
+                    * user registered (freeStaking = 300, lockedStaking = 0, assignments = [])
+        4. registered user calls function with amount < freeStaking
+            * Inputs:
+                * Amount = 20 ETH 
+                * user registered (freeStaking = 50 ETH, lockedStaking = 0, assignments = [])
+            * Expected Output:
+                * Events:
+                    1. stakingEvent(msg.sender, “20000000000000000000 deducted from freeStaking”)
+                * Outcome:
+                    * user registered (freeStaking = 30 ETH, lockedStaking = 0, assignments = [])
+        5. registered user calls function with amount = freeStaking & lockedStaking = 0
+            * Inputs:
+                * Amount = 30 Eth 
+                * user registered (freeStaking = 30 Eth, lockedStaking = 0, assignments = [])
+            * Expected Output:
+                * Events:
+                    1. stakingEvent(msg.sender, “30000000000000000000 deducted from freeStaking”)
+                    2. participantEvent(msg.sender, “successfully closed account”)
+                * Outcome:
+                    * User unregistered, complete amount of ETH staked with contract was returned to user’s EOW wallet and account was closed
+        6. registered user calls function with amount = freeStaking & lockedStaking != 0
+            * Inputs:
+                * Amount = 2
+                * User registered(freeStaking = 2, lockedStaking = 18, activeAssignments = [0XB3E145B86B560AAD117746623DB553EA6E819296])
+            * Expected Output:
+                * Events:
+                    1. stakingEvent(msg.sender, “2 deducted from freeStaking”)
+                * Outcome:
+                    * User registered(freeStaking = 0, lockedStaking = 18, activeAssignments = [0XB3E145B86B560AAD117746623DB553EA6E819296])
+
+
+
+Node-Functions
+
+    n_activate
+        Internal Functions: i_resourceManagement
+
+        1. Unregistered Node calls with parameter resources = 0
+            * Inputs:
+                * Msg.value = 3
+                * resources = 0
+                * unregistered Node
+            * Expected Output:
+                * Revert with Custom error: invalidInput()
+        2. Unregistered Node calls with msg.value < requiredStaking
+            * Inputs: 
+                * Msg.value = 3
+                * resources = 30
+                * unregistered Node
+            * Expected Output:
+                * Revert with Custom error: insufficientFundsSent(3,180)
+        3. Unregistered Node registers itself successfully as a node
+            * Inputs:
+                * Msg.value = 300
+                * Resources = 3
+                * Unregistered Node
+            * Expected Output:
+                * Events:
+                    1. participantEvent(msg.sender, successfully registered)
+                    2. stakingEvent(msg.sender, “18 added to boundStaking, 282 added to freeStaking”)
+                * Outcome:
+                    * Node registered (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0), node added to resourceSchedule
+        4. registered Node tries to register itself again
+            * Inputs: 
+                * Msg.value = 300
+                * resources = 3
+                * Registered Node (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0), node added to resourceSchedule
+            * Expected Output:
+                * Revert with Custom error: alreadyRegistered(msg.sender)
+
+    n_deactivate
+        Internal Functions: i_scheduleDeleteEntry
+
+        1. unregistered node calls function
+            * Inputs:
+                * Node unregistered
+            * Expected Output:
+                * Revert with message: “This function is restricted to registered Nodes”
+        2. Registered node with active assignments calls function
+            * Inputs:
+                * Node registered(freeStaking = 182, boundStaking = 12, lockedStaking = 6,  activeAssignments = [0XB3E145B86B560AAD117746623DB553EA6E819296], freeResources = 2, lockedResources = 1)
+            * Expected Output:
+                * Revert with Custom error: deactivateActiveAssignments()
+        3. Registered node without active assignments calls function, no other node’s currently registered
+                * Registered Node (freeStaking = 282, boundStaking = 18, lockedStaking = 0, assignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Events:
+                    1. participantEvent(msg.sender, successfully closed account)
+                * Outcome:
+                    * Node unregistered, staking returned to node’s EOW-wallet, node’s entry in resourceSchedule deleted (no shifting of following entries needed)
+        4. Registered node without active assignments calls function, other nodes currently registered
+                * Registered Node (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Events:
+                    1. participantEvent(msg.sender, successfully closed account)
+                * Outcome:
+                    * Node unregistered, staking returned to node’s EOW-wallet, node’s entry in resourceSchedule deleted and following nodes shifted one entry to the left
+
+    n_info
+
+        1. unregistered node calls function
+            * Inputs:
+                * Node unregistered
+            * Expected Output:
+                * Revert with message: “This function is restricted to registered Nodes”
+        2. registered node without active assignment calls function
+            * Inputs:
+                * Registered Node (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * freeStaking = 282
+                * boundStaking = 18
+                * lockedStaking = 0
+                * activeAssignments = []
+                * freeResources = 3
+                * lockedResources = 0
+        3. Registered node with active assignments calls function
+            * Inputs:
+                * Node registered(freeStaking = 182, boundStaking = 12, lockedStaking = 6,  activeAssignments = [0XB3E145B86B560AAD117746623DB553EA6E819296], freeResources = 2, lockedResources = 1)
+            * Expected Output:
+                * Returns: 
+                    * freeStaking = 182
+                    * boundStaking = 12
+                    * lockedStaking = 6
+                    * activeAssignments = [0XB3E145B86B560AAD117746623DB553EA6E819296]
+                    * freeResources = 2
+                    * lockedResources = 1
+
+    n_addStaking
+
+        1. unregistered node calls function
+            * Inputs:
+                * Msg.value = 3
+                * Node unregistered
+            * Expected Output:
+                * Revert with message: “This function is restricted to registered Nodes”
+        2. registered user calls function with msg.value = 0
+            * Inputs:
+                * Msg.value = 0
+                * Node registered (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Revert with Custom error: insufficientFundsSent(0,1)
+            * Outcome
+                * No changes to node’s entry
+        3. registered node calls function with msg.value > 0
+            * Inputs:
+                * Msg.value = 18
+                * Node registered (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Events:
+                    1. stakingEvent(msg.sender, “18 added to freeStaking”)
+                * Outcome:
+                    * Node registered (freeStaking = 300, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+
+    n_reduceStaking
+
+        1. unregistered node calls function
+            * Inputs:
+                * Amount = 3
+                * Node unregistered
+            * Expected Output:
+                * Revert with message: “This function is restricted to registered Nodes”
+        2. registered node calls function with amount = 0
+            * Inputs:
+                * amount = 0
+                * Node registered (freeStaking = 300, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Revert with Custom error: invalidInput()
+        3. registered user calls function with amount > freeStaking
+            * Inputs:
+                * Amount = 600
+                * Node registered (freeStaking = 300, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Revert with Custom error: insufficientFreeStaking(300, 600) 
+        4. registered user calls function with amount < freeStaking
+            * Inputs:
+                * Amount = 100 
+                * Node registered (freeStaking = 300, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Events:
+                    1. stakingEvent(msg.sender, “100 deducted from freeStaking”)
+                * Outcome:
+                    * Node registered (freeStaking = 200, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+        5. registered node calls function with amount = freeStaking and some staking contained in lockedStaking or boundStaking
+            * Inputs:
+                * Amount = 200
+                * Node registered (freeStaking = 200, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Events:
+                    1. stakingEvent(msg.sender, “200 deducted from freeStaking”)
+                * Outcome:
+                * Node registered (freeStaking = 0, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+        6. registered node calls function with amount = freeStaking and no staking contained in lockedStaking or boundStaking
+            * Inputs:
+                * Amount = 18 
+                * Node registered (freeStaking = 18, boundStaking=0, lockedStaking = 0, activeAssignments = [], freeResources = 0, lockedResources = 0)
+            * Expected Output:
+                * Outcome:
+                    * Revert with Custom error: invalidInput()
+
+    n_addResources 
+
+        1. unregistered node calls function
+            * Inputs:
+                * Amount = 3
+                * Node unregistered
+            * Expected Output:
+                * Revert with message: “This function is restricted to registered Nodes”
+        2. registered node calls function with amount = 0
+            * Inputs:
+                * amount = 0
+                * Node registered (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Revert with Custom error: invalidInput()
+        3. registered node calls function with an amount that would require more freeStaking than node has available
+            * Inputs:
+                * Amount = 600
+                * Node registered (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Revert with Custom error: insufficientFreeStaking(282, 3600) 
+        4. registered node calls function with amount an amount that required less or exactly the amount of freeStaking that node currently has available
+            * Inputs:
+                * Amount = 47
+                * Node registered (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Events:
+                    1. stakingEvent(msg.sender, “282 deducted from freeStaking, 282 added to boundStaking”)
+                    2. participantEvent(msg.sender, “47 resources activated”)
+                * Outcome:
+                    * Node registered (freeStaking = 0, boundStaking = 300, lockedStaking = 0, activeAssignments = [], freeResources = 50, lockedResources = 0)
+
+    n_reduceResources
+
+        1. unregistered node calls function
+            * Inputs:
+                * Amount = 3
+                * Node unregistered
+            * Expected Output:
+                * Revert with message: “This function is restricted to registered Nodes”
+        2. registered node calls function with amount = 0
+            * Inputs:
+                * amount = 0
+                * Node registered (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Revert with Custom error: invalidInput()
+        3. registered node calls function with amount > freeResources amount of node
+            * Inputs:
+                * amount = 800
+                * Node registered (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Events:
+                    1. participantEvent(msg.sender, “3 resources deactivated”)
+                    2. stakingEvent(msg.sender, “18 deducted from boundStaking, 18 added to freeStaking”)
+                * Outcome:
+                    * Node registered (freeStaking = 300, boundStaking = 0, lockedStaking = 0, activeAssignments = [], freeResources = 0, lockedResources = 0)
+        4. registered node calls function with amount <= freeResources
+            * Inputs:
+                * Amount = 10 
+                    * Node registered (freeStaking = 282, boundStaking = 18, lockedStaking = 0, activeAssignments = [], freeResources = 3, lockedResources = 0)
+            * Expected Output:
+                * Events:
+                    1. participantEvent(msg.sender, “3 resources deactivated”)
+                    2. stakingEvent(msg.sender, “18 deducted from boundStaking, 18 added to freeStaking”)
+                * Outcome:
+                    * Node registered (freeStaking = 300, boundStaking = 0, lockedStaking = 0, activeAssignments = [], freeResources = 0, lockedResources = 0)
+
+
+AssignmentContract
+
+    info
+
+        1. Some EOW calls function
+            * Input:
+                * Assignment(nodeDataTransferAddress = “”, state = PAYMENT_OUTSTANDING, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                    * AssignmentResources = 2
+                    * AssignmentStaking = 12
+                    * AssignmentPayment = 6
+                    * CurrentState = 0
+
+    u_assignmentPayment
+        Internal Functions: c_updateState, c_checkInputAddress
+
+        1. Someone else than user calls function
+            * Input
+                * Assignment(nodeDataTransferAddress = “”, state = PAYMENT_OUTSTANDING, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert with message: “This function is restricted to the connected user”
+        2.  User calls function with msg.value < requiredValue
+            * Input
+                * Msg.value = 3
+                * Assignment(nodeDataTransferAddress = “”, state = PAYMENT_OUTSTANDING, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert custom Error insufficientFundsSent(3,6) 
+        3. User calls function with msg.value > requiredValue in state PAYMENT_OUTSTANDING
+            * Input
+                * Msg.value = 10
+                * Assignment(nodeDataTransferAddress = “”, state = PAYMENT_OUTSTANDING, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Events:
+                    * assignmentStateEvent(1)
+                * Assignment(nodeDataTransferAddress = “”, state = PAYED, resources = 2, staking = 12, payment = 6)
+                * 4 Wei are returned to user, rest of payment is kept by contract
+        4. User calls function while assignment is not in state PAYMENT_OUTSTANDING
+            * Input
+                * Msg.value = 3
+                * Assignment(nodeDataTransferAddress = “”, state = PAYED, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert custom Error assignmentHasDifferentState(PAYED,PAYMENT_OUTSTANDING)
+
+    n_waitingForData
+        Internal Functions: c_checkInputAddress, c_updateState
+
+        1. Someone else than node calls function
+            * Input
+                * DataTransferAddress = “abc”
+                * Assignment(nodeDataTransferAddress = “”, state = PAYED, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert with message: “This function is restricted to the connected node”
+        2.  Node call function with invalid (in current implementation: invalid = empty string) DataTransferAddress-input
+            * Input
+                * DataTransferAddress = “”
+                * Assignment(nodeDataTransferAddress = “”, state = PAYED, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert custom Error invalidInput()
+        3.  Node calls function with valid DataTransferAddress-input in state PAYED
+            * Input
+                * DataTransferAddress = “abc”
+                * Assignment(nodeDataTransferAddress = “”, state = PAYED, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Events:
+                    * assignmentStateEvent(2)
+                * Assignment(nodeDataTransferAddress = “abc”, state = WAITING_FOR_DATA, resources = 2, staking = 12, payment = 6)
+        4. Node calls function while assignment is not in state PAYED
+            * Input
+                * Msg.value = 3
+                * Assignment(nodeDataTransferAddress = “abc”, state = WAITING_FOR_DATA, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert custom Error assignmentHasDifferentState(WAITING_FOR_DATA,PAYED)
+
+    u_assignmentDataTransferAddress
+
+        1. Someone else than user calls function
+            * Input
+                * Assignment(nodeDataTransferAddress = “abc”, state = WAITING_FOR_DATA, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert with message: “This function is restricted to the connected user”
+        2.  User calls function in state WAITING_FOR_DATA
+            * Input
+                * Assignment(nodeDataTransferAddress = “abc”, state = WAITING_FOR_DATA, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * nodeDataTransferAddress = “abc”
+        3. User calls function while assignment is not in state WAITING_FOR_DATA
+            * Input
+                * Assignment(nodeDataTransferAddress = “abc”, state = PROCESSING, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert custom Error assignmentHasDifferentState(PROCESSING, WAITING_FOR_DATA)
+
+    n_processing
+        Internal functions: c_updateState
+
+        1. Someone else than node calls function
+            * Input
+                * Assignment(nodeDataTransferAddress = “abc”, state = WAITING_FOR_DATA, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert with message: “This function is restricted to the connected node”
+        2.  Node calls function in state WAITING_FOR_DATA because it has received user’s input
+            * Input
+                * Assignment(nodeDataTransferAddress = “abc”, state = WAITING_FOR_DATA, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Events:
+                    * assignmentStateEvent(3)
+                * Assignment(nodeDataTransferAddress = “abc”, state = PROCESSING, resources = 2, staking = 12, payment = 6)
+        3. Node calls function while assignment is not in state WAITING_FOR_DATA
+            * Input
+                * Assignment(nodeDataTransferAddress = “abc”, state = PROCESSING, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert custom Error assignmentHasDifferentState(PROCESSING, WAITING_FOR_DATA)
+
+    n_done
+        Internal functions: c_updateState
+
+        1. Someone else than node calls function
+            * Input
+                * Assignment(nodeDataTransferAddress = “abc”, state = PROCESSING, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert with message: “This function is restricted to the connected node”
+        2.  Node calls function in state PROCESSING because it has completed the assignment and sent to output back to user over external channel
+            * Input
+                * Assignment(nodeDataTransferAddress = “abc”, state = PROCESSING, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Events:
+                    * assignmentStateEvent(4)
+                * Assignment(nodeDataTransferAddress = “abc”, state = NODE_DONE, resources = 2, staking = 12, payment = 6)
+        3. Node calls function while assignment is not in state PROCESSING
+            * Input
+                * Assignment(nodeDataTransferAddress = “abc”, state = NODE_DONE, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert custom Error assignmentHasDifferentState(N_DONE ,PROCESSING)
+
+    u_assignmentEnd
+        Internal functions: c_updateState, c_remainingStakingCalculation
+        UserContract functions: c_assignmentCompletion
+        NodeContract functions: c_assignmentCompletion
+
+        1. Someone else than user calls function
+            * Input
+                * Assignment(nodeDataTransferAddress = “abc”, state = NODE_DONE, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert with message: “This function is restricted to the connected user”
+        2.  User calls function in state N_DONE after receiving node’s output over external channel and accepts the work done by node 
+            * Input
+                * AssignmentContract:
+                    * Assignment(nodeDataTransferAddress = “abc”, state = NODE_DONE, resources = 2, staking = 12, payment = 6)
+                    * OutputCorrect = 1
+                * UserContract:
+                    * User(freeStaking = 288, lockedStaking = 12, activeAssignments = [assignmentAddress])
+                * NodeContract:
+                    * Node(freeStaking = 2700, boundStaking = 288, lockedStaking = 12, activeAssignments = [assignmentAddress], freeResources = 48, lockedResources = 2)
+            * Expected Output:
+                * Events:
+                    * AssignmentContract:
+                        * assignmentStateEvent(5)
+                    * UserContract:
+                        * assignmentEvent(userAddress, assignmentAddress, “assignment completed”)
+                        * stakingEvent(userAddress, “12 added to freeStaking, 12 deducted from lockedStaking”)
+                    * NodeContract:
+                        * assignmentEvent(nodeAddress, assignmentAddress, “assignment completed”)
+                        * stakingEvent(nodeAddress, “12 added to freeStaking, 12 deducted from lockedStaking”)
+                        * participantEvent(nodeAddress, “2 resources deactivated”)
+                * AssignmentContract
+                    * Payment returned to User
+                    * Initial amount of Staking sent back to user/node 
+                    * Contract deleted
+                * UserContract:
+                    * User(freeStaking = 300, lockedStaking = 0, activeAssignments = [])
+                * NodeContract:
+                    * Node(freeStaking = 2712, boundStaking = 288, lockedStaking = 0, activeAssignments = [], freeResources = 48, lockedResources = 0)
+        3.  User calls function in state N_DONE after receiving node’s output over external channel and accepts the work done by node 
+            * Input
+                * AssignmentContract:
+                    * Assignment(nodeDataTransferAddress = “abc”, state = NODE_DONE, resources = 2, staking = 12, payment = 6)
+                    * OutputCorrect = 0
+                * UserContract:
+                    * User(freeStaking = 288, lockedStaking = 12, activeAssignments = [assignmentAddress])
+                * NodeContract:
+                    * Node(freeStaking = 240, boundStaking = 48, lockedStaking = 12, activeAssignments = [assignmentAddress], freeResources = 8, lockedResources = 2)
+            * Expected Output:
+                * Events:
+                    * AssignmentContract:
+                        * assignmentStateEvent(6)
+                    * UserContract:
+                        * assignmentEvent(userAddress, assignmentAddress, “assignment completed unsuccessfully”)
+                        * stakingEvent(userAddress, “6 added to freeStaking, 12 deducted from lockedStaking”)
+                    * NodeContract:
+                        * assignmentEvent(nodeAddress, assignmentAddress, “assignment unsuccessfully”)
+                        * stakingEvent(nodeAddress, “6 added to freeStaking, 12 deducted from lockedStaking”)
+                        * participantEvent(nodeAddress, “2 resources deactivated”)
+                * AssignmentContract
+                    * Payment returned to User
+                    * Remaining amount of Staking sent back to user/node 
+                    * Destruction of contract
+                        * Deducted amount of Staking sent to BENEFICIARY_ADDRESS on contract’s destruction
+                * UserContract:
+                    * User(freeStaking = 294, lockedStaking = 0, activeAssignments = [])
+                * NodeContract:
+                    * Node(freeStaking = 246, boundStaking = 48, lockedStaking = 0, activeAssignments = [], freeResources = 8, lockedResources = 0)
+        4.  User calls function in state N_DONE with invalid parameter outputCorrect (> 1)
+            * Input
+                * AssignmentContract:
+                    * Assignment(nodeDataTransferAddress = “abc”, state = NODE_DONE, resources = 2, staking = 12, payment = 6)
+                    * OutputCorrect = 2
+                * UserContract:
+                    * User(freeStaking = 288, lockedStaking = 12, activeAssignments = [assignmentAddress])
+                * NodeContract:
+                    * Node(freeStaking = 240, boundStaking = 48, lockedStaking = 12, activeAssignments = [assignmentAddress], freeResources = 8, lockedResources = 2)
+            * Expected Output:
+                * Revert custom Error invalidInput()
+        5. User calls function while assignment is not in state N_DONE
+            * Input
+                * Assignment(nodeDataTransferAddress = “abc”, state = PROCESSING, resources = 2, staking = 12, payment = 6)
+            * Expected Output:
+                * Revert custom Error assignmentHasDifferentState(PROCESSING, N_DONE)
